@@ -1,0 +1,119 @@
+body {
+    background-color: #f0f4f0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+#game-container {
+    position: relative;
+    width: 800px;
+    height: 600px;
+}
+
+#gameCanvas {
+    background-color: #faf9f6;
+    border: 8px solid #ffb7c5;
+    border-radius: 15px;
+    display: block;
+}
+
+.menu {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 400px;
+    background: rgba(255, 255, 255, 0.98);
+    border: 4px solid #ffb7c5;
+    border-radius: 20px;
+    padding: 30px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    pointer-events: auto;
+}
+
+#ui-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+#mute-btn {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    width: 45px;
+    height: 45px;
+    z-index: 100;
+    background-color: white;
+    border: 3px solid #ffb7c5;
+    border-radius: 50%;
+    cursor: pointer;
+    pointer-events: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#hud {
+    position: absolute;
+    top: 40px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+    z-index: 20;
+}
+
+#peek-warning {
+    color: #ffb7c5;
+    font-size: 32px;
+    font-weight: bold;
+    background: white;
+    padding: 15px 30px;
+    border: 6px solid #ffb7c5;
+    border-radius: 50px;
+    animation: pulse 1s infinite ease-in-out;
+}
+
+#peek-active {
+    color: white;
+    font-size: 48px;
+    font-weight: 900;
+    background: #e63946;
+    padding: 20px 40px;
+    border: 6px solid #ffb7c5;
+    border-radius: 60px;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+button {
+    background-color: #ffb7c5;
+    border: none;
+    color: white;
+    padding: 12px;
+    border-radius: 25px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+button:hover { background-color: #ff9aaf; }
