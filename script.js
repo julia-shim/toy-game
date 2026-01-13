@@ -1,14 +1,15 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// --- PHYSICS CONSTANTS ---
 const GRAVITY = 0.6;
 const TERMINAL_VELOCITY = 12;
+const TICK_RATE = 1000 / 60; // Force 60 updates per second
+
 let gameRunning = false;
 let currentLevel = 1;
-
-// Delta Time variables
-let lastTime = 0;
-const TARGET_FPS = 60;
+let lastTimestamp = 0;
+let accumulator = 0;
 
 const COLORS = {
     PLAYER: '#ffb7c5',
@@ -40,14 +41,10 @@ class Particle {
         this.alpha = 1;
         this.decay = Math.random() * 0.02 + 0.01;
     }
-    update(dt) { this.x += this.vx * dt; this.y += this.vy * dt; this.alpha -= this.decay * dt; }
+    update() { this.x += this.vx; this.y += this.vy; this.alpha -= this.decay; }
     draw() {
-        ctx.save();
-        ctx.globalAlpha = this.alpha;
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.save(); ctx.globalAlpha = this.alpha; ctx.fillStyle = this.color;
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
     }
 }
@@ -62,14 +59,10 @@ function drawHealthBar(x, y, w, health, maxHealth) {
     const drawX = x - (barW - w) / 2;
     const drawY = y - 15;
     ctx.fillStyle = COLORS.HB_BG;
-    ctx.beginPath();
-    ctx.roundRect(drawX, drawY, barW, barH, 3);
-    ctx.fill();
+    ctx.beginPath(); ctx.roundRect(drawX, drawY, barW, barH, 3); ctx.fill();
     const fillW = (health / maxHealth) * barW;
     ctx.fillStyle = COLORS.HB_FILL;
-    ctx.beginPath();
-    ctx.roundRect(drawX, drawY, Math.max(0, fillW), barH, 3);
-    ctx.fill();
+    ctx.beginPath(); ctx.roundRect(drawX, drawY, Math.max(0, fillW), barH, 3); ctx.fill();
 }
 
 class Entity {
@@ -80,11 +73,9 @@ class Entity {
     }
     draw() {
         ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.roundRect(this.x, this.y, this.w, this.h, 8);
-        ctx.fill();
+        ctx.beginPath(); ctx.roundRect(this.x, this.y, this.w, this.h, 8); ctx.fill();
     }
-    update(dt) { this.x += this.vx * dt; this.y += this.vy * dt; }
+    update() { this.x += this.vx; this.y += this.vy; }
 }
 
 class Player extends Entity {
@@ -96,7 +87,7 @@ class Player extends Entity {
         this.facingRight = true;
         this.scaleY = 1; this.scaleX = 1;
     }
-    update(platforms, dt) {
+    update(platforms) {
         this.vx = 0;
         if (keys.ArrowRight) { this.vx = this.speed; this.facingRight = true; }
         if (keys.ArrowLeft) { this.vx = -this.speed; this.facingRight = false; }
@@ -104,11 +95,10 @@ class Player extends Entity {
             this.vy = this.jumpPower; this.grounded = false;
             this.scaleY = 1.4; this.scaleX = 0.7;
         }
-        this.vy += GRAVITY * dt;
+        this.vy += GRAVITY;
         if (this.vy > TERMINAL_VELOCITY) this.vy = TERMINAL_VELOCITY;
         
-        // Apply horizontal movement
-        this.x += this.vx * dt;
+        this.x += this.vx;
         platforms.forEach(plat => {
             if (this.checkCollision(plat)) {
                 if (this.vx > 0) this.x = plat.x - this.w;
@@ -116,27 +106,21 @@ class Player extends Entity {
             }
         });
 
-        // Apply vertical movement
         let wasGrounded = this.grounded;
         this.grounded = false;
-        this.y += this.vy * dt;
+        this.y += this.vy;
         platforms.forEach(plat => {
             if (this.checkCollision(plat)) {
                 if (this.vy > 0) {
-                    this.y = plat.y - this.h;
-                    this.vy = 0;
-                    this.grounded = true;
+                    this.y = plat.y - this.h; this.vy = 0; this.grounded = true;
                     if (!wasGrounded) { this.scaleY = 0.6; this.scaleX = 1.4; }
-                } else if (this.vy < 0) {
-                    this.y = plat.y + plat.h;
-                    this.vy = 0;
-                }
+                } else if (this.vy < 0) { this.y = plat.y + plat.h; this.vy = 0; }
             }
         });
 
-        this.scaleX += (1 - this.scaleX) * 0.2 * dt;
-        this.scaleY += (1 - this.scaleY) * 0.2 * dt;
-        if (this.attackCooldown > 0) this.attackCooldown -= dt;
+        this.scaleX += (1 - this.scaleX) * 0.2;
+        this.scaleY += (1 - this.scaleY) * 0.2;
+        if (this.attackCooldown > 0) this.attackCooldown--;
         if (keys.z && this.attackCooldown <= 0) this.attack();
 
         if (this.x < 0) this.x = 0;
@@ -149,15 +133,11 @@ class Player extends Entity {
         ctx.translate(this.x + this.w / 2, this.y + this.h);
         ctx.scale(this.scaleX, this.scaleY);
         ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.roundRect(-this.w / 2, -this.h, this.w, this.h, 8);
-        ctx.fill();
+        ctx.beginPath(); ctx.roundRect(-this.w / 2, -this.h, this.w, this.h, 8); ctx.fill();
         ctx.fillStyle = "#555";
         const eyeOffset = this.facingRight ? 5 : -5;
-        ctx.beginPath();
-        ctx.arc(eyeOffset, -this.h * 0.7, 2, 0, Math.PI * 2);
-        ctx.arc(eyeOffset + (this.facingRight ? 8 : -8), -this.h * 0.7, 2, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(eyeOffset, -this.h * 0.7, 2, 0, Math.PI * 2);
+        ctx.arc(eyeOffset + (this.facingRight ? 8 : -8), -this.h * 0.7, 2, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
     }
     checkCollision(rect) {
@@ -180,7 +160,7 @@ class Projectile extends Entity {
         super(x, y, 12, 12, isPlayer ? COLORS.PROJECTILE : '#333');
         this.vx = vx; this.isPlayer = isPlayer; this.life = 60; 
     }
-    update(dt) { super.update(dt); this.life -= dt; if (this.life <= 0) this.markedForDeletion = true; }
+    update() { super.update(); this.life--; if (this.life <= 0) this.markedForDeletion = true; }
 }
 
 class Enemy extends Entity {
@@ -188,14 +168,14 @@ class Enemy extends Entity {
         super(x, y, 30, 30, COLORS.ENEMY); 
         this.startX = x; this.range = range; this.dir = 1; this.speed = 2; this.health = 20;
     }
-    update(dt) {
+    update() {
         this.vx = this.speed * this.dir;
-        super.update(dt);
+        super.update();
         if (this.x > this.startX + this.range) this.dir = -1;
         if (this.x < this.startX) this.dir = 1;
-        this.vy += GRAVITY * dt; 
+        this.vy += GRAVITY; 
         platforms.forEach(plat => {
-            if (this.y + this.h <= plat.y + 10 && this.y + this.h + (this.vy * dt) >= plat.y) {
+            if (this.y + this.h <= plat.y + 10 && this.y + this.h + this.vy >= plat.y) {
                  this.vy = 0; this.y = plat.y - this.h;
             }
         });
@@ -209,41 +189,36 @@ class Enemy extends Entity {
 class Boss extends Entity {
     constructor(x, y, type, minX, maxX) {
         super(x, y, 60, 60, type === 1 ? COLORS.BOSS1 : COLORS.BOSS2);
-        this.type = type; 
-        this.maxHealth = type === 1 ? 100 : 80; 
+        this.type = type; this.maxHealth = type === 1 ? 100 : 80; 
         this.health = this.maxHealth; this.timer = 0; this.phase = 0;
         this.minX = minX; this.maxX = maxX;
     }
-    update(dt) {
-        this.timer += dt; this.vy += GRAVITY * dt;
+    update() {
+        this.timer++; this.vy += GRAVITY;
         platforms.forEach(plat => {
             if (this.x < plat.x + plat.w && this.x + this.w > plat.x &&
-                this.y + this.h <= plat.y + 15 && this.y + this.h + (this.vy * dt) >= plat.y) {
+                this.y + this.h <= plat.y + 15 && this.y + this.h + this.vy >= plat.y) {
                  this.vy = 0; this.y = plat.y - this.h;
                  if (this.type === 2 && this.phase === 1) { this.vx = 0; this.phase = 0; this.timer = 0; }
             }
         });
-        super.update(dt);
+        super.update();
         if (this.x < 0) { this.x = 0; this.vx = 0; }
         if (this.x + this.w > 800) { this.x = 800 - this.w; this.vx = 0; }
         if (player.checkCollision(this)) player.takeDamage(2);
-        if (this.type === 1) this.boss1AI(dt); else this.boss2AI(dt); 
+        if (this.type === 1) this.boss1AI(); else this.boss2AI(); 
     }
-    draw() {
-        super.draw();
-        drawHealthBar(this.x, this.y - 15, this.w, this.health, this.maxHealth);
-    }
-    boss1AI(dt) {
-        if (Math.floor(this.timer) % 120 === 0) {
+    draw() { super.draw(); drawHealthBar(this.x, this.y - 15, this.w, this.health, this.maxHealth); }
+    boss1AI() {
+        if (this.timer % 120 === 0) {
             const dir = player.x < this.x ? -1 : 1;
             projectiles.push(new Projectile(this.x + 30, this.y + 30, dir * 7, false));
-            this.timer += 1; // Prevent multiple shots in one tick
         }
         let moveDir = player.x < this.x ? -1 : 1;
         if ((moveDir === -1 && this.x <= this.minX) || (moveDir === 1 && (this.x + this.w) >= this.maxX)) moveDir = 0;
         this.vx = moveDir;
     }
-    boss2AI(dt) {
+    boss2AI() {
         if (this.phase === 0 && this.timer > 60) {
             this.phase = 1; this.vy = -18; 
             let jumpSpeed = (player.x - this.x) / 40; 
@@ -254,8 +229,7 @@ class Boss extends Entity {
     takeDamage(amount) {
         this.health -= amount;
         if (this.health <= 0) { 
-            this.markedForDeletion = true; 
-            createSparkles(this.x + this.w/2, this.y + this.h/2, 30, COLORS.SPARKLE);
+            this.markedForDeletion = true; createSparkles(this.x + this.w/2, this.y + this.h/2, 30, COLORS.SPARKLE);
             spawnDoor(); 
         }
     }
@@ -268,15 +242,13 @@ function loadLevel(levelNum) {
     platforms.push({x: 0, y: 550, w: 800, h: 50});
     if (levelNum === 1) {
         platforms.push({x: 100, y: 450, w: 100, h: 20}, {x: 250, y: 350, w: 100, h: 20});
-        let topX = 350, topY = 250, topW = 400;
-        platforms.push({x: topX, y: topY, w: topW, h: 20});
+        let topX = 350, topY = 250, topW = 400; platforms.push({x: topX, y: topY, w: topW, h: 20});
         enemies.push(new Enemy(100, 420, 80), new Enemy(250, 320, 80));
         boss = new Boss(600, 190, 1, topX, topX + topW); 
     } else {
         platforms.push({x: 50, y: 450, w: 100, h: 20}, {x: 650, y: 450, w: 100, h: 20}); 
         platforms.push({x: 150, y: 350, w: 100, h: 20}, {x: 550, y: 350, w: 100, h: 20});
-        let topX = 225, topY = 250, topW = 350;
-        platforms.push({x: topX, y: topY, w: topW, h: 20}); 
+        let topX = 225, topY = 250, topW = 350; platforms.push({x: topX, y: topY, w: topW, h: 20}); 
         enemies.push(new Enemy(150, 320, 80), new Enemy(550, 320, 80));
         boss = new Boss(400, 190, 2, topX, topX + topW);
     }
@@ -289,74 +261,79 @@ function spawnDoor() {
     if (currentLevel === 2) door.x = 375;
 }
 
-function updatePeekMechanic(dt) {
-    peekTimer += dt;
+function updatePeekMechanic() {
+    peekTimer++;
     const w = document.getElementById('peek-warning');
     const a = document.getElementById('peek-active');
     const music = document.getElementById('bgMusic');
     
     if (peekState === PEEK_STATE.SAFE) {
-        if(music) music.volume = .3;
-        if (w) w.style.display = 'none'; 
-        if (a) a.style.display = 'none';
+        if(music) music.volume = .3; if (w) w.style.display = 'none'; if (a) a.style.display = 'none';
         if (peekTimer > nextPeekTime) { peekState = PEEK_STATE.WARNING; peekTimer = 0; }
     } else if (peekState === PEEK_STATE.WARNING) {
         if (w) w.style.display = 'block';
         if (peekTimer > 120) { peekState = PEEK_STATE.PEEKING; peekTimer = 0; }
     } else {
-        if(music) music.volume = .1;
-        if (a) a.style.display = 'block'; 
-        if (w) w.style.display = 'none';
-        const isMoving = Math.abs(player.vx) > 0.1 || Math.abs(player.vy) > 0.1;
-        const isShooting = keys.z;
-        if (isMoving || isShooting) { player.takeDamage(100); } 
-        if (peekTimer > 180) { 
-            peekState = PEEK_STATE.SAFE; peekTimer = 0; 
-            nextPeekTime = Math.random() * 300 + 300; 
-        }
+        if(music) music.volume = .1; if (a) a.style.display = 'block'; if (w) w.style.display = 'none';
+        if (Math.abs(player.vx) > 0.1 || Math.abs(player.vy) > 0.1 || keys.z) { player.takeDamage(100); } 
+        if (peekTimer > 180) { peekState = PEEK_STATE.SAFE; peekTimer = 0; nextPeekTime = Math.random() * 300 + 300; }
     }
 }
 
-function update(time) {
+// --- CORE GAME LOOP FIX ---
+function gameLoop(timestamp) {
     if (!gameRunning) return;
 
-    const deltaTime = time - lastTime;
-    lastTime = time;
-    // Cap deltaTime to prevent huge jumps if tab is hidden
-    const dt = Math.min(deltaTime / (1000 / TARGET_FPS), 2);
+    if (!lastTimestamp) lastTimestamp = timestamp;
+    let elapsed = timestamp - lastTimestamp;
+    lastTimestamp = timestamp;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    updatePeekMechanic(dt);
-    
-    ctx.fillStyle = COLORS.PLATFORM;
-    platforms.forEach(p => { ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 4); ctx.fill(); });
-    
-    if (door) {
-        ctx.fillStyle = door.color;
-        ctx.beginPath(); ctx.roundRect(door.x, door.y, door.w, door.h, 10); ctx.fill();
-        if (player.checkCollision(door)) { if (currentLevel === 1) loadLevel(2); else endGame(true); }
+    // Add time to accumulator
+    accumulator += elapsed;
+
+    // Update logic in 60fps chunks
+    while (accumulator >= TICK_RATE) {
+        updatePhysics();
+        accumulator -= TICK_RATE;
     }
-    
-    player.update(platforms, dt); 
-    player.draw();
-    
-    enemies.forEach(e => { e.update(dt); e.draw(); });
+
+    // Draw frame
+    render();
+
+    requestAnimationFrame(gameLoop);
+}
+
+function updatePhysics() {
+    updatePeekMechanic();
+    player.update(platforms); 
+    enemies.forEach(e => e.update());
     enemies = enemies.filter(e => !e.markedForDeletion);
-    
-    if (boss && !boss.markedForDeletion) { boss.update(dt); boss.draw(); }
-    
-    particles.forEach((p, i) => { p.update(dt); p.draw(); if (p.alpha <= 0) particles.splice(i, 1); });
-    
+    if (boss && !boss.markedForDeletion) boss.update();
+    particles.forEach((p, i) => { p.update(); if (p.alpha <= 0) particles.splice(i, 1); });
     projectiles.forEach(p => {
-        p.update(dt); p.draw();
+        p.update();
         if (p.isPlayer) {
             enemies.forEach(e => { if (player.checkCollision.call(p, e)) { e.takeDamage(10); p.markedForDeletion = true; }});
             if (boss && !boss.markedForDeletion && player.checkCollision.call(p, boss)) { boss.takeDamage(5); p.markedForDeletion = true; }
         } else if (player.checkCollision.call(p, player)) { player.takeDamage(10); p.markedForDeletion = true; }
     });
     projectiles = projectiles.filter(p => !p.markedForDeletion);
-    
-    requestAnimationFrame(update);
+
+    if (door && player.checkCollision(door)) { 
+        if (currentLevel === 1) loadLevel(2); else endGame(true); 
+    }
+}
+
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = COLORS.PLATFORM;
+    platforms.forEach(p => { ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 4); ctx.fill(); });
+    if (door) { ctx.fillStyle = door.color; ctx.beginPath(); ctx.roundRect(door.x, door.y, door.w, door.h, 10); ctx.fill(); }
+    player.draw();
+    enemies.forEach(e => e.draw());
+    if (boss && !boss.markedForDeletion) boss.draw();
+    particles.forEach(p => p.draw());
+    projectiles.forEach(p => p.draw());
 }
 
 function startGame() {
@@ -365,23 +342,29 @@ function startGame() {
     document.getElementById('start-screen').style.display = 'none';
     gameRunning = true; 
     loadLevel(1); 
-    lastTime = performance.now();
-    requestAnimationFrame(update);
+    lastTimestamp = performance.now();
+    requestAnimationFrame(gameLoop);
 }
+
 function restartLevel() { 
     document.getElementById('game-over-screen').style.display = 'none'; 
     gameRunning = true; loadLevel(currentLevel); 
-    lastTime = performance.now();
-    requestAnimationFrame(update); 
+    lastTimestamp = performance.now();
+    requestAnimationFrame(gameLoop); 
 }
+
 function fullRestart() { 
     document.getElementById('game-over-screen').style.display = 'none'; 
     document.getElementById('victory-screen').style.display = 'none'; 
     gameRunning = true; loadLevel(1); 
-    lastTime = performance.now();
-    requestAnimationFrame(update); 
+    lastTimestamp = performance.now();
+    requestAnimationFrame(gameLoop); 
 }
-function endGame(victory) { gameRunning = false; document.getElementById(victory ? 'victory-screen' : 'game-over-screen').style.display = 'flex'; }
+
+function endGame(victory) { 
+    gameRunning = false; 
+    document.getElementById(victory ? 'victory-screen' : 'game-over-screen').style.display = 'flex'; 
+}
 
 window.addEventListener('keydown', e => { if (keys.hasOwnProperty(e.key)) keys[e.key] = true; });
 window.addEventListener('keyup', e => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
