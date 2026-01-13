@@ -6,6 +6,10 @@ const TERMINAL_VELOCITY = 12;
 let gameRunning = false;
 let currentLevel = 1;
 
+// Delta Time variables
+let lastTime = 0;
+const TARGET_FPS = 60;
+
 const COLORS = {
     PLAYER: '#ffb7c5',
     PLATFORM: '#d4a373',
@@ -36,7 +40,7 @@ class Particle {
         this.alpha = 1;
         this.decay = Math.random() * 0.02 + 0.01;
     }
-    update() { this.x += this.vx; this.y += this.vy; this.alpha -= this.decay; }
+    update(dt) { this.x += this.vx * dt; this.y += this.vy * dt; this.alpha -= this.decay * dt; }
     draw() {
         ctx.save();
         ctx.globalAlpha = this.alpha;
@@ -80,7 +84,7 @@ class Entity {
         ctx.roundRect(this.x, this.y, this.w, this.h, 8);
         ctx.fill();
     }
-    update() { this.x += this.vx; this.y += this.vy; }
+    update(dt) { this.x += this.vx * dt; this.y += this.vy * dt; }
 }
 
 class Player extends Entity {
@@ -92,7 +96,7 @@ class Player extends Entity {
         this.facingRight = true;
         this.scaleY = 1; this.scaleX = 1;
     }
-    update(platforms) {
+    update(platforms, dt) {
         this.vx = 0;
         if (keys.ArrowRight) { this.vx = this.speed; this.facingRight = true; }
         if (keys.ArrowLeft) { this.vx = -this.speed; this.facingRight = false; }
@@ -100,27 +104,41 @@ class Player extends Entity {
             this.vy = this.jumpPower; this.grounded = false;
             this.scaleY = 1.4; this.scaleX = 0.7;
         }
-        this.vy += GRAVITY;
+        this.vy += GRAVITY * dt;
         if (this.vy > TERMINAL_VELOCITY) this.vy = TERMINAL_VELOCITY;
-        super.update();
-        this.scaleX += (1 - this.scaleX) * 0.2;
-        this.scaleY += (1 - this.scaleY) * 0.2;
-        if (this.attackCooldown > 0) this.attackCooldown--;
-        if (keys.z && this.attackCooldown <= 0) this.attack();
-        let wasGrounded = this.grounded;
-        this.grounded = false;
+        
+        // Apply horizontal movement
+        this.x += this.vx * dt;
         platforms.forEach(plat => {
             if (this.checkCollision(plat)) {
-                if (this.vy > 0 && this.y + this.h - this.vy <= plat.y + 15) { 
-                    this.y = plat.y - this.h; 
-                    if (!wasGrounded) { this.scaleY = 0.6; this.scaleX = 1.4; }
-                    this.vy = 0; this.grounded = true;
-                } else if (this.vy < 0 && this.y - this.vy >= plat.y + plat.h) {
-                    this.y = plat.y + plat.h; this.vy = 0;
-                } else if (this.vx > 0) { this.x = plat.x - this.w;
-                } else if (this.vx < 0) { this.x = plat.x + plat.w; }
+                if (this.vx > 0) this.x = plat.x - this.w;
+                else if (this.vx < 0) this.x = plat.x + plat.w;
             }
         });
+
+        // Apply vertical movement
+        let wasGrounded = this.grounded;
+        this.grounded = false;
+        this.y += this.vy * dt;
+        platforms.forEach(plat => {
+            if (this.checkCollision(plat)) {
+                if (this.vy > 0) {
+                    this.y = plat.y - this.h;
+                    this.vy = 0;
+                    this.grounded = true;
+                    if (!wasGrounded) { this.scaleY = 0.6; this.scaleX = 1.4; }
+                } else if (this.vy < 0) {
+                    this.y = plat.y + plat.h;
+                    this.vy = 0;
+                }
+            }
+        });
+
+        this.scaleX += (1 - this.scaleX) * 0.2 * dt;
+        this.scaleY += (1 - this.scaleY) * 0.2 * dt;
+        if (this.attackCooldown > 0) this.attackCooldown -= dt;
+        if (keys.z && this.attackCooldown <= 0) this.attack();
+
         if (this.x < 0) this.x = 0;
         if (this.x + this.w > canvas.width) this.x = canvas.width - this.w;
         if (this.y > canvas.height) this.takeDamage(100);
@@ -162,7 +180,7 @@ class Projectile extends Entity {
         super(x, y, 12, 12, isPlayer ? COLORS.PROJECTILE : '#333');
         this.vx = vx; this.isPlayer = isPlayer; this.life = 60; 
     }
-    update() { super.update(); this.life--; if (this.life <= 0) this.markedForDeletion = true; }
+    update(dt) { super.update(dt); this.life -= dt; if (this.life <= 0) this.markedForDeletion = true; }
 }
 
 class Enemy extends Entity {
@@ -170,14 +188,14 @@ class Enemy extends Entity {
         super(x, y, 30, 30, COLORS.ENEMY); 
         this.startX = x; this.range = range; this.dir = 1; this.speed = 2; this.health = 20;
     }
-    update() {
+    update(dt) {
         this.vx = this.speed * this.dir;
-        super.update();
+        super.update(dt);
         if (this.x > this.startX + this.range) this.dir = -1;
         if (this.x < this.startX) this.dir = 1;
-        this.vy += GRAVITY; 
+        this.vy += GRAVITY * dt; 
         platforms.forEach(plat => {
-            if (this.y + this.h <= plat.y + 10 && this.y + this.h + this.vy >= plat.y) {
+            if (this.y + this.h <= plat.y + 10 && this.y + this.h + (this.vy * dt) >= plat.y) {
                  this.vy = 0; this.y = plat.y - this.h;
             }
         });
@@ -196,35 +214,36 @@ class Boss extends Entity {
         this.health = this.maxHealth; this.timer = 0; this.phase = 0;
         this.minX = minX; this.maxX = maxX;
     }
-    update() {
-        this.timer++; this.vy += GRAVITY;
+    update(dt) {
+        this.timer += dt; this.vy += GRAVITY * dt;
         platforms.forEach(plat => {
             if (this.x < plat.x + plat.w && this.x + this.w > plat.x &&
-                this.y + this.h <= plat.y + 15 && this.y + this.h + this.vy >= plat.y) {
+                this.y + this.h <= plat.y + 15 && this.y + this.h + (this.vy * dt) >= plat.y) {
                  this.vy = 0; this.y = plat.y - this.h;
                  if (this.type === 2 && this.phase === 1) { this.vx = 0; this.phase = 0; this.timer = 0; }
             }
         });
-        super.update();
+        super.update(dt);
         if (this.x < 0) { this.x = 0; this.vx = 0; }
         if (this.x + this.w > 800) { this.x = 800 - this.w; this.vx = 0; }
         if (player.checkCollision(this)) player.takeDamage(2);
-        if (this.type === 1) this.boss1AI(); else this.boss2AI(); 
+        if (this.type === 1) this.boss1AI(dt); else this.boss2AI(dt); 
     }
     draw() {
         super.draw();
         drawHealthBar(this.x, this.y - 15, this.w, this.health, this.maxHealth);
     }
-    boss1AI() {
-        if (this.timer % 120 === 0) {
+    boss1AI(dt) {
+        if (Math.floor(this.timer) % 120 === 0) {
             const dir = player.x < this.x ? -1 : 1;
             projectiles.push(new Projectile(this.x + 30, this.y + 30, dir * 7, false));
+            this.timer += 1; // Prevent multiple shots in one tick
         }
         let moveDir = player.x < this.x ? -1 : 1;
         if ((moveDir === -1 && this.x <= this.minX) || (moveDir === 1 && (this.x + this.w) >= this.maxX)) moveDir = 0;
         this.vx = moveDir;
     }
-    boss2AI() {
+    boss2AI(dt) {
         if (this.phase === 0 && this.timer > 60) {
             this.phase = 1; this.vy = -18; 
             let jumpSpeed = (player.x - this.x) / 40; 
@@ -270,8 +289,8 @@ function spawnDoor() {
     if (currentLevel === 2) door.x = 375;
 }
 
-function updatePeekMechanic() {
-    peekTimer++;
+function updatePeekMechanic(dt) {
+    peekTimer += dt;
     const w = document.getElementById('peek-warning');
     const a = document.getElementById('peek-active');
     const music = document.getElementById('bgMusic');
@@ -298,30 +317,45 @@ function updatePeekMechanic() {
     }
 }
 
-function update() {
+function update(time) {
     if (!gameRunning) return;
+
+    const deltaTime = time - lastTime;
+    lastTime = time;
+    // Cap deltaTime to prevent huge jumps if tab is hidden
+    const dt = Math.min(deltaTime / (1000 / TARGET_FPS), 2);
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    updatePeekMechanic();
+    updatePeekMechanic(dt);
+    
     ctx.fillStyle = COLORS.PLATFORM;
     platforms.forEach(p => { ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 4); ctx.fill(); });
+    
     if (door) {
         ctx.fillStyle = door.color;
         ctx.beginPath(); ctx.roundRect(door.x, door.y, door.w, door.h, 10); ctx.fill();
         if (player.checkCollision(door)) { if (currentLevel === 1) loadLevel(2); else endGame(true); }
     }
-    player.update(platforms); player.draw();
-    enemies.forEach(e => { e.update(); e.draw(); });
+    
+    player.update(platforms, dt); 
+    player.draw();
+    
+    enemies.forEach(e => { e.update(dt); e.draw(); });
     enemies = enemies.filter(e => !e.markedForDeletion);
-    if (boss && !boss.markedForDeletion) { boss.update(); boss.draw(); }
-    particles.forEach((p, i) => { p.update(); p.draw(); if (p.alpha <= 0) particles.splice(i, 1); });
+    
+    if (boss && !boss.markedForDeletion) { boss.update(dt); boss.draw(); }
+    
+    particles.forEach((p, i) => { p.update(dt); p.draw(); if (p.alpha <= 0) particles.splice(i, 1); });
+    
     projectiles.forEach(p => {
-        p.update(); p.draw();
+        p.update(dt); p.draw();
         if (p.isPlayer) {
             enemies.forEach(e => { if (player.checkCollision.call(p, e)) { e.takeDamage(10); p.markedForDeletion = true; }});
             if (boss && !boss.markedForDeletion && player.checkCollision.call(p, boss)) { boss.takeDamage(5); p.markedForDeletion = true; }
         } else if (player.checkCollision.call(p, player)) { player.takeDamage(10); p.markedForDeletion = true; }
     });
     projectiles = projectiles.filter(p => !p.markedForDeletion);
+    
     requestAnimationFrame(update);
 }
 
@@ -329,11 +363,26 @@ function startGame() {
     const music = document.getElementById('bgMusic');
     if(music) { music.volume = 0.3; music.play().catch(e => console.log("Audio play blocked")); }
     document.getElementById('start-screen').style.display = 'none';
-    gameRunning = true; loadLevel(1); update();
+    gameRunning = true; 
+    loadLevel(1); 
+    lastTime = performance.now();
+    requestAnimationFrame(update);
 }
-function restartLevel() { document.getElementById('game-over-screen').style.display = 'none'; gameRunning = true; loadLevel(currentLevel); update(); }
-function fullRestart() { document.getElementById('game-over-screen').style.display = 'none'; document.getElementById('victory-screen').style.display = 'none'; gameRunning = true; loadLevel(1); update(); }
+function restartLevel() { 
+    document.getElementById('game-over-screen').style.display = 'none'; 
+    gameRunning = true; loadLevel(currentLevel); 
+    lastTime = performance.now();
+    requestAnimationFrame(update); 
+}
+function fullRestart() { 
+    document.getElementById('game-over-screen').style.display = 'none'; 
+    document.getElementById('victory-screen').style.display = 'none'; 
+    gameRunning = true; loadLevel(1); 
+    lastTime = performance.now();
+    requestAnimationFrame(update); 
+}
 function endGame(victory) { gameRunning = false; document.getElementById(victory ? 'victory-screen' : 'game-over-screen').style.display = 'flex'; }
+
 window.addEventListener('keydown', e => { if (keys.hasOwnProperty(e.key)) keys[e.key] = true; });
 window.addEventListener('keyup', e => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
 
